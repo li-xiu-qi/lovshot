@@ -164,6 +164,13 @@
       console.log('[DEBUG][selector] set_region 完成');
 
       if (mode === 'image') {
+        // 隐藏选区边框和工具栏，避免截图时包含这些元素
+        selection.style.display = 'none';
+        toolbar.style.display = 'none';
+
+        // 等待下一帧渲染完成
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+
         console.log('[DEBUG][selector] 调用 save_screenshot');
         try {
           const result = await invoke('save_screenshot');
