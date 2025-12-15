@@ -12,250 +12,183 @@
       overflow: hidden;
       cursor: crosshair;
       user-select: none;
+      background: transparent;
     }
-    #bg {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background-size: cover;
-      background-position: top left;
-    }
-    #overlay {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0, 0, 0, 0.4);
-    }
+
+    /* Selection box with "punch hole" effect via box-shadow */
     #selection {
       position: absolute;
-      border: 2px solid #00ff00;
+      border: 2px solid #007AFF;
       background: transparent;
-      box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
+      box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.4);
       display: none;
       z-index: 10;
     }
-    #info {
-      position: fixed;
-      bottom: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgba(0,0,0,0.8);
-      color: white;
-      padding: 10px 20px;
-      border-radius: 8px;
-      font-family: system-ui, sans-serif;
-      font-size: 14px;
-      z-index: 20;
-    }
+
     #size {
       position: absolute;
-      background: rgba(0,0,0,0.8);
-      color: #00ff00;
+      background: rgba(0, 0, 0, 0.75);
+      color: #fff;
       padding: 4px 8px;
       border-radius: 4px;
-      font-family: monospace;
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
       font-size: 12px;
       pointer-events: none;
       z-index: 15;
+      display: none;
     }
-    .loading {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      height: 100vh;
-      background: #1a1a1a;
-      color: white;
-      font-family: system-ui;
-    }
+
     #toolbar {
       position: absolute;
       display: none;
       gap: 8px;
-      background: rgba(30, 30, 30, 0.95);
+      background: rgba(40, 40, 40, 0.95);
       padding: 8px 12px;
       border-radius: 8px;
       z-index: 100;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
     }
+
     .toolbar-btn {
-      width: 40px;
-      height: 40px;
+      width: 36px;
+      height: 36px;
       border: none;
       border-radius: 6px;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 18px;
+      font-size: 16px;
       transition: all 0.15s;
-      background: #3a3a3a;
-      color: white;
+      background: transparent;
+      color: #fff;
     }
+
     .toolbar-btn:hover {
-      background: #4a4a4a;
-      transform: scale(1.05);
+      background: rgba(255, 255, 255, 0.15);
     }
+
     .toolbar-btn.active {
-      background: #007aff;
-      box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.4);
+      background: #007AFF;
     }
-    .toolbar-btn.screenshot {
-      background: #34c759;
+
+    .toolbar-divider {
+      width: 1px;
+      height: 24px;
+      background: rgba(255, 255, 255, 0.2);
+      align-self: center;
     }
-    .toolbar-btn.screenshot:hover {
-      background: #30d158;
-    }
-    .toolbar-btn.screenshot.active {
-      background: #34c759;
-      box-shadow: 0 0 0 2px rgba(52, 199, 89, 0.4);
-    }
-    .toolbar-btn.record {
-      background: #ff3b30;
-    }
-    .toolbar-btn.record:hover {
-      background: #ff453a;
-    }
-    .toolbar-btn.record.active {
-      background: #ff3b30;
-      box-shadow: 0 0 0 2px rgba(255, 59, 48, 0.4);
-    }
-    .toolbar-btn.close {
-      background: #636366;
-    }
-    .toolbar-btn.close:hover {
-      background: #8e8e93;
-    }
-    #mode-hint {
+
+    #hint {
       position: fixed;
-      top: 20px;
+      bottom: 60px;
       left: 50%;
       transform: translateX(-50%);
-      background: rgba(0,0,0,0.8);
-      color: white;
+      background: rgba(0, 0, 0, 0.75);
+      color: #fff;
       padding: 8px 16px;
       border-radius: 6px;
-      font-family: system-ui, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
       font-size: 13px;
-      z-index: 100;
-      display: none;
+      z-index: 50;
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
     }
+
     kbd {
-      background: rgba(255,255,255,0.2);
+      background: rgba(255, 255, 255, 0.2);
       padding: 2px 6px;
       border-radius: 4px;
       margin: 0 2px;
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
     }
   </style>
 </head>
 <body>
-  <div class="loading" id="loading">Loading screenshot...</div>
-  <div id="bg" style="display:none"></div>
-  <div id="overlay" style="display:none"></div>
   <div id="selection"></div>
-  <div id="size" style="display:none"></div>
-  <div id="info" style="display:none">Click and drag to select region. Press <kbd>ESC</kbd> to cancel.</div>
-  <div id="mode-hint"></div>
+  <div id="size"></div>
+  <div id="hint">Drag to select area. Press <kbd>ESC</kbd> to cancel.</div>
+
   <div id="toolbar">
-    <button class="toolbar-btn screenshot active" id="btn-screenshot" title="Screenshot (S)">📷</button>
-    <button class="toolbar-btn record" id="btn-record" title="Record GIF (V)">🎬</button>
-    <button class="toolbar-btn close" id="btn-close" title="Cancel (ESC)">✕</button>
+    <button class="toolbar-btn" id="btn-image" title="Screenshot (S)">📷</button>
+    <button class="toolbar-btn" id="btn-gif" title="Record GIF (G)">🎬</button>
+    <button class="toolbar-btn" id="btn-video" title="Record Video (V)">🎥</button>
+    <div class="toolbar-divider"></div>
+    <button class="toolbar-btn" id="btn-confirm" title="Confirm (Enter)">✓</button>
+    <button class="toolbar-btn" id="btn-close" title="Cancel (ESC)">✕</button>
   </div>
 
   <script type="module">
-    import { invoke } from 'https://unpkg.com/@tauri-apps/api@2/core';
-    import { getCurrentWindow } from 'https://unpkg.com/@tauri-apps/api@2/window';
+    const { invoke } = window.__TAURI__.core;
+    const { getCurrentWindow } = window.__TAURI__.window;
 
-    const bg = document.getElementById('bg');
-    const overlay = document.getElementById('overlay');
     const selection = document.getElementById('selection');
     const sizeEl = document.getElementById('size');
-    const info = document.getElementById('info');
-    const loading = document.getElementById('loading');
+    const hint = document.getElementById('hint');
     const toolbar = document.getElementById('toolbar');
-    const modeHint = document.getElementById('mode-hint');
-    const btnScreenshot = document.getElementById('btn-screenshot');
-    const btnRecord = document.getElementById('btn-record');
+    const btnImage = document.getElementById('btn-image');
+    const btnGif = document.getElementById('btn-gif');
+    const btnVideo = document.getElementById('btn-video');
+    const btnConfirm = document.getElementById('btn-confirm');
     const btnClose = document.getElementById('btn-close');
 
     let startX, startY, isSelecting = false;
     let selectionRect = null;
-    let mode = 'screenshot'; // 'screenshot' or 'record'
+    let mode = 'image'; // 'image', 'gif', 'video'
 
     function updateModeUI() {
-      if (mode === 'screenshot') {
-        btnScreenshot.classList.add('active');
-        btnRecord.classList.remove('active');
-        modeHint.innerHTML = 'Mode: <strong>Screenshot</strong> - Press <kbd>V</kbd> for video, <kbd>Enter</kbd> to capture';
-      } else {
-        btnScreenshot.classList.remove('active');
-        btnRecord.classList.add('active');
-        modeHint.innerHTML = 'Mode: <strong>GIF Record</strong> - Press <kbd>S</kbd> for screenshot, <kbd>Enter</kbd> to start';
+      btnImage.classList.toggle('active', mode === 'image');
+      btnGif.classList.toggle('active', mode === 'gif');
+      btnVideo.classList.toggle('active', mode === 'video');
+    }
+
+    async function doCapture() {
+      if (!selectionRect) return;
+
+      // Pass logical pixels, Rust will convert to physical using accurate screen_scale
+      const region = {
+        x: Math.round(selectionRect.x),
+        y: Math.round(selectionRect.y),
+        width: Math.round(selectionRect.w),
+        height: Math.round(selectionRect.h)
+      };
+
+      await invoke('set_region', { region });
+
+      if (mode === 'image') {
+        await invoke('save_screenshot');
+      } else if (mode === 'gif') {
+        await invoke('start_recording');
+      } else if (mode === 'video') {
+        // TODO: implement video recording
+        await invoke('start_recording');
       }
-    }
 
-    async function doScreenshot() {
-      if (!selectionRect) return;
-      const scale = window.devicePixelRatio || 1;
-      await invoke('set_region', {
-        region: {
-          x: Math.round(selectionRect.x * scale),
-          y: Math.round(selectionRect.y * scale),
-          width: Math.round(selectionRect.w * scale),
-          height: Math.round(selectionRect.h * scale)
-        }
-      });
-      await invoke('save_screenshot');
       await getCurrentWindow().close();
     }
 
-    async function doRecord() {
-      if (!selectionRect) return;
-      const scale = window.devicePixelRatio || 1;
-      await invoke('set_region', {
-        region: {
-          x: Math.round(selectionRect.x * scale),
-          y: Math.round(selectionRect.y * scale),
-          width: Math.round(selectionRect.w * scale),
-          height: Math.round(selectionRect.h * scale)
-        }
-      });
-      await invoke('start_recording');
-      await getCurrentWindow().close();
-    }
-
-    // Load screenshot as background
-    try {
-      const screenshot = await invoke('capture_screenshot');
-      bg.style.backgroundImage = `url(${screenshot})`;
-      loading.style.display = 'none';
-      bg.style.display = 'block';
-      overlay.style.display = 'block';
-      info.style.display = 'block';
-    } catch (e) {
-      loading.textContent = 'Failed to capture: ' + e;
-    }
-
+    // Mouse events for selection
     document.addEventListener('mousedown', (e) => {
       if (e.target.closest('#toolbar')) return;
 
-      // Hide toolbar if re-selecting
+      // Reset selection
       toolbar.style.display = 'none';
-      modeHint.style.display = 'none';
       selectionRect = null;
 
       startX = e.clientX;
       startY = e.clientY;
       isSelecting = true;
+
       selection.style.display = 'block';
       selection.style.left = startX + 'px';
       selection.style.top = startY + 'px';
       selection.style.width = '0px';
       selection.style.height = '0px';
-      overlay.style.display = 'none';
+
+      sizeEl.style.display = 'block';
+      hint.style.display = 'none';
     });
 
     document.addEventListener('mousemove', (e) => {
@@ -271,10 +204,10 @@
       selection.style.width = w + 'px';
       selection.style.height = h + 'px';
 
-      sizeEl.style.display = 'block';
-      sizeEl.style.left = (x + w + 10) + 'px';
-      sizeEl.style.top = (y + 10) + 'px';
-      sizeEl.textContent = `${w} x ${h}`;
+      // Position size label
+      sizeEl.style.left = (x + w + 8) + 'px';
+      sizeEl.style.top = (y + 8) + 'px';
+      sizeEl.textContent = `${w} × ${h}`;
     });
 
     document.addEventListener('mouseup', (e) => {
@@ -290,58 +223,44 @@
         selectionRect = { x, y, w, h };
 
         // Position toolbar below selection
-        const toolbarX = x + w / 2 - 60;
-        const toolbarY = y + h + 10;
+        const toolbarX = Math.max(10, Math.min(x + w / 2 - 100, window.innerWidth - 220));
+        const toolbarY = Math.min(y + h + 12, window.innerHeight - 60);
         toolbar.style.left = toolbarX + 'px';
         toolbar.style.top = toolbarY + 'px';
         toolbar.style.display = 'flex';
-        modeHint.style.display = 'block';
+
         updateModeUI();
+        sizeEl.style.display = 'none';
       } else {
+        // Too small, reset
         selection.style.display = 'none';
         sizeEl.style.display = 'none';
-        overlay.style.display = 'block';
+        hint.style.display = 'block';
       }
     });
 
-    // Toolbar button handlers
-    btnScreenshot.addEventListener('click', async () => {
-      mode = 'screenshot';
-      updateModeUI();
-      await doScreenshot();
-    });
+    // Toolbar buttons
+    btnImage.addEventListener('click', () => { mode = 'image'; updateModeUI(); });
+    btnGif.addEventListener('click', () => { mode = 'gif'; updateModeUI(); });
+    btnVideo.addEventListener('click', () => { mode = 'video'; updateModeUI(); });
+    btnConfirm.addEventListener('click', doCapture);
+    btnClose.addEventListener('click', () => getCurrentWindow().close());
 
-    btnRecord.addEventListener('click', async () => {
-      mode = 'record';
-      updateModeUI();
-      await doRecord();
-    });
-
-    btnClose.addEventListener('click', async () => {
-      await getCurrentWindow().close();
-    });
-
+    // Keyboard shortcuts
     document.addEventListener('keydown', async (e) => {
       if (e.key === 'Escape') {
         await getCurrentWindow().close();
-      } else if (e.key === 'v' || e.key === 'V') {
-        if (selectionRect) {
-          mode = 'record';
-          updateModeUI();
-        }
       } else if (e.key === 's' || e.key === 'S') {
-        if (selectionRect) {
-          mode = 'screenshot';
-          updateModeUI();
-        }
+        mode = 'image';
+        updateModeUI();
+      } else if (e.key === 'g' || e.key === 'G') {
+        mode = 'gif';
+        updateModeUI();
+      } else if (e.key === 'v' || e.key === 'V') {
+        mode = 'video';
+        updateModeUI();
       } else if (e.key === 'Enter') {
-        if (selectionRect) {
-          if (mode === 'screenshot') {
-            await doScreenshot();
-          } else {
-            await doRecord();
-          }
-        }
+        if (selectionRect) await doCapture();
       }
     });
   </script>

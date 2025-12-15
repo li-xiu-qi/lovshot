@@ -9,7 +9,7 @@ use gif::{Encoder, Frame, Repeat};
 use image::RgbaImage;
 use screenshots::Screen;
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, Manager, WebviewWindowBuilder, WebviewUrl};
+use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewWindowBuilder, WebviewUrl};
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Region {
@@ -30,6 +30,10 @@ struct AppState {
     region: Option<Region>,
     frames: Vec<RgbaImage>,
     fps: u32,
+    // Screen info for DPI handling
+    screen_x: i32,
+    screen_y: i32,
+    screen_scale: f32,
 }
 
 impl Default for AppState {
@@ -39,6 +43,9 @@ impl Default for AppState {
             region: None,
             frames: Vec::new(),
             fps: 10,
+            screen_x: 0,
+            screen_y: 0,
+            screen_scale: 1.0,
         }
     }
 }
@@ -89,35 +96,65 @@ fn capture_screenshot() -> Result<String, String> {
 }
 
 #[tauri::command]
-fn open_selector(app: AppHandle) -> Result<(), String> {
+fn open_selector(app: AppHandle, state: tauri::State<SharedState>) -> Result<(), String> {
+    // Use screenshots crate for full screen size (including dock/menu bar)
     let screens = Screen::all().map_err(|e| e.to_string())?;
     if screens.is_empty() {
         return Err("No screens found".to_string());
     }
 
     let screen = &screens[0];
+    let screen_x = screen.display_info.x;
+    let screen_y = screen.display_info.y;
     let width = screen.display_info.width;
     let height = screen.display_info.height;
     let scale = screen.display_info.scale_factor;
+
+    // Store screen info for capture
+    {
+        let mut s = state.lock().unwrap();
+        s.screen_x = screen_x;
+        s.screen_y = screen_y;
+        s.screen_scale = scale;
+    }
 
     // Close existing selector if any
     if let Some(win) = app.get_webview_window("selector") {
         let _ = win.close();
     }
 
-    // Create fullscreen overlay for selection (use logical size)
-    let logical_width = width as f64 / scale as f64;
-    let logical_height = height as f64 / scale as f64;
-
-    WebviewWindowBuilder::new(&app, "selector", WebviewUrl::App("/selector.html".into()))
+    let win = WebviewWindowBuilder::new(&app, "selector", WebviewUrl::App("/selector.html".into()))
         .title("Select Region")
-        .inner_size(logical_width, logical_height)
-        .position(0.0, 0.0)
         .decorations(false)
         .always_on_top(true)
         .skip_taskbar(true)
+        .transparent(true)
+        .shadow(false)
         .build()
         .map_err(|e| e.to_string())?;
+
+    // screenshots crate returns logical pixels, convert to physical
+    let physical_width = (width as f32 * scale) as u32;
+    let physical_height = (height as f32 * scale) as u32;
+    let physical_x = (screen_x as f32 * scale) as i32;
+    let physical_y = (screen_y as f32 * scale) as i32;
+
+    win.set_size(PhysicalSize::new(physical_width, physical_height)).map_err(|e| e.to_string())?;
+    win.set_position(PhysicalPosition::new(physical_x, physical_y)).map_err(|e| e.to_string())?;
+
+    // Set window level above dock on macOS
+    #[cfg(target_os = "macos")]
+    {
+        use objc::{msg_send, sel, sel_impl};
+
+        let _ = win.with_webview(|webview| {
+            unsafe {
+                let ns_window = webview.ns_window() as *mut objc::runtime::Object;
+                // NSScreenSaverWindowLevel = 1000, above dock (20)
+                let _: () = msg_send![ns_window, setLevel: 1000_i64];
+            }
+        });
+    }
 
     Ok(())
 }
@@ -125,7 +162,14 @@ fn open_selector(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 fn set_region(state: tauri::State<SharedState>, region: Region) {
     let mut s = state.lock().unwrap();
-    s.region = Some(region);
+    let scale = s.screen_scale;
+    // Convert logical pixels to physical pixels
+    s.region = Some(Region {
+        x: (region.x as f32 * scale) as i32,
+        y: (region.y as f32 * scale) as i32,
+        width: (region.width as f32 * scale) as u32,
+        height: (region.height as f32 * scale) as u32,
+    });
 }
 
 #[tauri::command]
@@ -307,6 +351,7 @@ pub fn run() {
             set_region,
             start_recording,
             stop_recording,
+            save_screenshot,
             save_gif,
             set_fps,
         ])
