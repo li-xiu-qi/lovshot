@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Select Region</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      cursor: crosshair;
+      user-select: none;
+    }
+    #bg {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-size: cover;
+      background-position: top left;
+    }
+    #overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.4);
+    }
+    #selection {
+      position: absolute;
+      border: 2px solid #00ff00;
+      background: transparent;
+      box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
+      display: none;
+      z-index: 10;
+    }
+    #info {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.8);
+      color: white;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-family: system-ui, sans-serif;
+      font-size: 14px;
+      z-index: 20;
+    }
+    #size {
+      position: absolute;
+      background: rgba(0,0,0,0.8);
+      color: #00ff00;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 12px;
+      pointer-events: none;
+      z-index: 15;
+    }
+    .loading {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      background: #1a1a1a;
+      color: white;
+      font-family: system-ui;
+    }
+  </style>
+</head>
+<body>
+  <div class="loading" id="loading">Loading screenshot...</div>
+  <div id="bg" style="display:none"></div>
+  <div id="overlay" style="display:none"></div>
+  <div id="selection"></div>
+  <div id="size" style="display:none"></div>
+  <div id="info" style="display:none">Click and drag to select region. Press ESC to cancel.</div>
+
+  <script type="module">
+    import { invoke } from 'https://unpkg.com/@tauri-apps/api@2/core';
+    import { getCurrentWindow } from 'https://unpkg.com/@tauri-apps/api@2/window';
+
+    const bg = document.getElementById('bg');
+    const overlay = document.getElementById('overlay');
+    const selection = document.getElementById('selection');
+    const sizeEl = document.getElementById('size');
+    const info = document.getElementById('info');
+    const loading = document.getElementById('loading');
+
+    let startX, startY, isSelecting = false;
+
+    // Load screenshot as background
+    try {
+      const screenshot = await invoke('capture_screenshot');
+      bg.style.backgroundImage = `url(${screenshot})`;
+      loading.style.display = 'none';
+      bg.style.display = 'block';
+      overlay.style.display = 'block';
+      info.style.display = 'block';
+    } catch (e) {
+      loading.textContent = 'Failed to capture: ' + e;
+    }
+
+    document.addEventListener('mousedown', (e) => {
+      startX = e.clientX;
+      startY = e.clientY;
+      isSelecting = true;
+      selection.style.display = 'block';
+      selection.style.left = startX + 'px';
+      selection.style.top = startY + 'px';
+      selection.style.width = '0px';
+      selection.style.height = '0px';
+      overlay.style.display = 'none';
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (!isSelecting) return;
+
+      const x = Math.min(e.clientX, startX);
+      const y = Math.min(e.clientY, startY);
+      const w = Math.abs(e.clientX - startX);
+      const h = Math.abs(e.clientY - startY);
+
+      selection.style.left = x + 'px';
+      selection.style.top = y + 'px';
+      selection.style.width = w + 'px';
+      selection.style.height = h + 'px';
+
+      sizeEl.style.display = 'block';
+      sizeEl.style.left = (x + w + 10) + 'px';
+      sizeEl.style.top = (y + 10) + 'px';
+      sizeEl.textContent = `${w} x ${h}`;
+    });
+
+    document.addEventListener('mouseup', async (e) => {
+      if (!isSelecting) return;
+      isSelecting = false;
+
+      const x = Math.min(e.clientX, startX);
+      const y = Math.min(e.clientY, startY);
+      const w = Math.abs(e.clientX - startX);
+      const h = Math.abs(e.clientY - startY);
+
+      if (w > 10 && h > 10) {
+        const scale = window.devicePixelRatio || 1;
+        await invoke('set_region', {
+          region: {
+            x: Math.round(x * scale),
+            y: Math.round(y * scale),
+            width: Math.round(w * scale),
+            height: Math.round(h * scale)
+          }
+        });
+        await invoke('start_recording');
+      }
+
+      await getCurrentWindow().close();
+    });
+
+    document.addEventListener('keydown', async (e) => {
+      if (e.key === 'Escape') {
+        await getCurrentWindow().close();
+      }
+    });
+  </script>
+</body>
+</html>
