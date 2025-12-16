@@ -46,7 +46,7 @@ pub fn run() {
                         return;
                     }
 
-                    // Check if scroll capturing - if so, emit stop event (not finish)
+                    // Check if scroll capturing - if so, emit stop event
                     let is_scroll_capturing = state_for_shortcut.lock().unwrap().scroll_capturing;
                     if is_scroll_capturing {
                         println!("[DEBUG][shortcut] 停止滚动截图（进入暂停状态）");
@@ -93,8 +93,10 @@ pub fn run() {
             commands::start_scroll_capture,
             commands::capture_scroll_frame_auto,
             commands::get_scroll_preview,
+            commands::copy_scroll_to_clipboard,
             commands::finish_scroll_capture,
             commands::cancel_scroll_capture,
+            commands::open_scroll_overlay,
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {

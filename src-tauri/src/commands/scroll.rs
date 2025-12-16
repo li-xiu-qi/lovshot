@@ -3,11 +3,11 @@ use std::path::PathBuf;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use image::{RgbaImage, GenericImage, DynamicImage};
 use screenshots::Screen;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager, WebviewWindowBuilder, WebviewUrl, PhysicalPosition, PhysicalSize};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
 use crate::state::SharedState;
-use crate::types::ScrollCaptureProgress;
+use crate::types::{ScrollCaptureProgress, Region};
 
 /// Start scroll capture mode - captures the initial frame
 #[tauri::command]
@@ -249,9 +249,25 @@ pub fn get_scroll_preview(state: tauri::State<SharedState>) -> Result<ScrollCapt
     }
 }
 
-/// Finish scroll capture - save the stitched image
+/// Copy scroll capture to clipboard
 #[tauri::command]
-pub fn finish_scroll_capture(app: AppHandle, state: tauri::State<SharedState>) -> Result<String, String> {
+pub fn copy_scroll_to_clipboard(app: AppHandle, state: tauri::State<SharedState>) -> Result<(), String> {
+    let s = state.lock().unwrap();
+    let stitched = s.scroll_stitched.as_ref().ok_or("No stitched image")?;
+
+    let tauri_image = tauri::image::Image::new_owned(
+        stitched.as_raw().to_vec(),
+        stitched.width(),
+        stitched.height(),
+    );
+    app.clipboard().write_image(&tauri_image).map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+/// Finish scroll capture - save the stitched image to specified path
+#[tauri::command]
+pub fn finish_scroll_capture(state: tauri::State<SharedState>, path: String) -> Result<String, String> {
     let mut s = state.lock().unwrap();
 
     if !s.scroll_capturing {
@@ -267,28 +283,10 @@ pub fn finish_scroll_capture(app: AppHandle, state: tauri::State<SharedState>) -
 
     drop(s);
 
-    // Copy to clipboard
-    let tauri_image = tauri::image::Image::new_owned(
-        stitched.as_raw().to_vec(),
-        stitched.width(),
-        stitched.height(),
-    );
-    app.clipboard().write_image(&tauri_image).map_err(|e| e.to_string())?;
+    // Save to specified path
+    stitched.save(&path).map_err(|e| e.to_string())?;
 
-    // Save to file
-    let output_dir = dirs::picture_dir()
-        .or_else(|| dirs::home_dir())
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("lovshot");
-
-    std::fs::create_dir_all(&output_dir).map_err(|e| e.to_string())?;
-
-    let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
-    let filename = output_dir.join(format!("scroll_{}.png", timestamp));
-
-    stitched.save(&filename).map_err(|e| e.to_string())?;
-
-    Ok(filename.to_string_lossy().to_string())
+    Ok(path)
 }
 
 /// Cancel scroll capture
@@ -401,4 +399,83 @@ fn generate_preview_base64(img: &RgbaImage, max_height: u32) -> Result<String, S
 
     let base64_str = STANDARD.encode(&jpg_data);
     Ok(format!("data:image/jpeg;base64,{}", base64_str))
+}
+
+/// Open the scroll overlay window (non-activating panel on macOS)
+/// This window won't steal focus, allowing scroll events to pass to underlying windows
+#[tauri::command]
+pub fn open_scroll_overlay(app: AppHandle, state: tauri::State<SharedState>, region: Region) -> Result<(), String> {
+    println!("[DEBUG][open_scroll_overlay] 打开滚动截图悬浮窗");
+
+    // Close existing scroll-overlay if any
+    if let Some(win) = app.get_webview_window("scroll-overlay") {
+        let _ = win.close();
+    }
+
+    // Get screen info for positioning
+    let screens = Screen::all().map_err(|e| e.to_string())?;
+    if screens.is_empty() {
+        return Err("No screens found".to_string());
+    }
+
+    let screen = &screens[0];
+    let scale = screen.display_info.scale_factor;
+
+    // Position the overlay to the right of the selection region
+    let panel_width = 220.0;
+    let panel_height = 400.0;
+    let margin = 12.0;
+
+    // Calculate position: prefer right side, fallback to left
+    let screen_width = screen.display_info.width as f32;
+    let region_right = region.x as f32 + region.width as f32;
+    let right_space = screen_width - region_right;
+
+    let panel_x = if right_space >= panel_width + margin {
+        region_right + margin
+    } else {
+        (region.x as f32 - panel_width - margin).max(0.0)
+    };
+    let panel_y = region.y as f32;
+
+    // Store region for capture
+    {
+        let mut s = state.lock().unwrap();
+        s.region = Some(region);
+    }
+
+    let win = WebviewWindowBuilder::new(&app, "scroll-overlay", WebviewUrl::App("/scroll-overlay.html".into()))
+        .title("Lovshot Scroll")
+        .inner_size(panel_width as f64, panel_height as f64)
+        .min_inner_size(280.0, 200.0)
+        .position(panel_x as f64, panel_y as f64)
+        .decorations(true)
+        .resizable(true)
+        .always_on_top(true)
+        .focused(true)
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    // macOS: Hide traffic light buttons
+    #[cfg(target_os = "macos")]
+    {
+        use objc::{msg_send, sel, sel_impl};
+        let _ = win.with_webview(|webview| {
+            unsafe {
+                let ns_window = webview.ns_window() as *mut objc::runtime::Object;
+                for i in 0u64..3 {
+                    let button: *mut objc::runtime::Object = msg_send![ns_window, standardWindowButton: i];
+                    if !button.is_null() {
+                        let _: () = msg_send![button, setHidden: true];
+                    }
+                }
+            }
+        });
+    }
+
+    win.show().map_err(|e| e.to_string())?;
+    win.set_focus().map_err(|e| e.to_string())?;
+
+    println!("[DEBUG][open_scroll_overlay] 悬浮窗创建成功");
+    Ok(())
 }

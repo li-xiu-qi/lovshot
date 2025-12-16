@@ -50,6 +50,7 @@ pub fn parse_shortcut(s: &str) -> Result<Shortcut, String> {
         "8" => Code::Digit8,
         "9" => Code::Digit9,
         "0" => Code::Digit0,
+        "ESCAPE" | "ESC" => Code::Escape,
         _ => return Err(format!("Unknown key: {}", key_str)),
     };
 
