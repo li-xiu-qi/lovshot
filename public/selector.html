@@ -114,7 +114,7 @@
   <div id="toolbar">
     <button class="toolbar-btn" id="btn-image" title="Screenshot (S)">📷</button>
     <button class="toolbar-btn" id="btn-gif" title="Record GIF (G)">🎬</button>
-    <button class="toolbar-btn" id="btn-video" title="Record Video (V)">🎥</button>
+    <button class="toolbar-btn" id="btn-video" title="Record Video (V)" disabled style="opacity: 0.4; cursor: not-allowed;">🎥</button>
     <div class="toolbar-divider"></div>
     <button class="toolbar-btn" id="btn-confirm" title="Confirm (Enter)">✓</button>
     <button class="toolbar-btn" id="btn-close" title="Cancel (ESC)">✕</button>
@@ -180,7 +180,7 @@
       console.log('[DEBUG][selector] 调用 set_region:', region);
 
       await invoke('set_region', { region });
-      console.log('[DEBUG][selector] set_region 完成');
+      console.log('[DEBUG][selector] set_region 完成, 当前 mode:', mode);
 
       if (mode === 'image') {
         // 隐藏选区边框和工具栏，避免截图时包含这些元素
@@ -198,10 +198,19 @@
           console.error('[DEBUG][selector] save_screenshot 错误:', e);
         }
       } else if (mode === 'gif') {
+        console.log('[DEBUG][selector] 调用 start_recording (GIF模式)');
         await invoke('start_recording');
+        console.log('[DEBUG][selector] start_recording 完成 (GIF模式)');
       } else if (mode === 'video') {
-        // TODO: implement video recording
-        await invoke('start_recording');
+        try {
+          console.log('[DEBUG][selector] 调用 start_recording (Video模式)');
+          await invoke('start_recording');
+          console.log('[DEBUG][selector] start_recording 完成 (Video模式)');
+        } catch (e) {
+          console.error('[DEBUG][selector] start_recording 错误:', e);
+        }
+      } else {
+        console.error('[DEBUG][selector] 未知 mode:', mode);
       }
 
       console.log('[DEBUG][selector] 关闭窗口');
@@ -281,7 +290,8 @@
     // Toolbar buttons
     btnImage.addEventListener('click', () => { mode = 'image'; updateModeUI(); });
     btnGif.addEventListener('click', () => { mode = 'gif'; updateModeUI(); });
-    btnVideo.addEventListener('click', () => { mode = 'video'; updateModeUI(); });
+    // Video disabled for now
+    // btnVideo.addEventListener('click', () => { mode = 'video'; updateModeUI(); });
     btnConfirm.addEventListener('click', (e) => {
       e.stopPropagation();
       console.log('Confirm clicked, selectionRect:', selectionRect, 'mode:', mode);
@@ -301,9 +311,10 @@
       } else if (e.key === 'g' || e.key === 'G') {
         mode = 'gif';
         updateModeUI();
-      } else if (e.key === 'v' || e.key === 'V') {
-        mode = 'video';
-        updateModeUI();
+      // Video disabled for now
+      // } else if (e.key === 'v' || e.key === 'V') {
+      //   mode = 'video';
+      //   updateModeUI();
       } else if (e.key === 'Enter') {
         if (selectionRect) await doCapture();
       }

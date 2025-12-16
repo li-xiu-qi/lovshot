@@ -3,41 +3,54 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import "./App.css";
 
-type CaptureFormat = "image" | "gif" | "video";
-
 interface RecordingState {
   is_recording: boolean;
   frame_count: number;
 }
 
+interface SaveResult {
+  success: boolean;
+  path: string | null;
+  error: string | null;
+}
+
 function App() {
-  const [format, setFormat] = useState<CaptureFormat>("image");
   const [isRecording, setIsRecording] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [frameCount, setFrameCount] = useState(0);
   const [savedPath, setSavedPath] = useState("");
 
   useEffect(() => {
-    const unlisten = listen<RecordingState>("recording-state", (event) => {
+    const unlistenRecording = listen<RecordingState>("recording-state", (event) => {
       setIsRecording(event.payload.is_recording);
       setFrameCount(event.payload.frame_count);
     });
 
+    const unlistenSave = listen<SaveResult>("save-complete", (event) => {
+      console.log("[DEBUG] save-complete 事件收到:", event.payload);
+      setIsSaving(false);
+      setFrameCount(0);
+      if (event.payload.success && event.payload.path) {
+        console.log("[DEBUG] 保存成功, 路径:", event.payload.path);
+        setSavedPath(event.payload.path);
+        setTimeout(() => setSavedPath(""), 3000);
+      } else if (event.payload.error) {
+        console.error("Save failed:", event.payload.error);
+      }
+    });
+
     return () => {
-      unlisten.then((fn) => fn());
+      unlistenRecording.then((fn) => fn());
+      unlistenSave.then((fn) => fn());
     };
   }, []);
 
   const handleStopRecording = async () => {
     await invoke("stop_recording");
     setIsRecording(false);
-    try {
-      const path = await invoke<string>("save_gif");
-      setSavedPath(path);
-      setTimeout(() => setSavedPath(""), 3000);
-    } catch (e) {
-      console.error("Failed to save:", e);
-    }
-    setFrameCount(0);
+    setIsSaving(true);
+    // save_gif 立即返回，编码在后台进行，完成后通过 save-complete 事件通知
+    await invoke("save_gif");
   };
 
   return (
@@ -46,42 +59,20 @@ function App() {
         <h1>lovshot</h1>
       </div>
 
-      <div className="format-tabs">
-        <button
-          className={`tab ${format === "image" ? "active" : ""}`}
-          onClick={() => setFormat("image")}
-          disabled={isRecording}
-        >
-          Image
-        </button>
-        <button
-          className={`tab ${format === "gif" ? "active" : ""}`}
-          onClick={() => setFormat("gif")}
-          disabled={isRecording}
-        >
-          GIF
-        </button>
-        <button
-          className={`tab ${format === "video" ? "active" : ""}`}
-          onClick={() => setFormat("video")}
-          disabled={isRecording}
-        >
-          Video
-        </button>
-      </div>
-
       <div className="controls">
-        {isRecording && (
+        {isRecording ? (
           <button className="btn-stop" onClick={handleStopRecording}>
             <span className="recording-dot" />
             Stop ({frameCount})
           </button>
+        ) : isSaving ? (
+          <p className="saving-hint">Saving GIF...</p>
+        ) : (
+          <p className="shortcut-hint">
+            <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>A</kbd>
+          </p>
         )}
       </div>
-
-      <p className="shortcut-hint">
-        <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>A</kbd>
-      </p>
 
       {savedPath && <div className="saved-toast">Saved!</div>}
     </main>

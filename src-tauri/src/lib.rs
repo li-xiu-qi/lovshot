@@ -27,6 +27,13 @@ pub struct RecordingState {
     pub frame_count: u32,
 }
 
+#[derive(Clone, Serialize, Deserialize)]
+pub struct SaveResult {
+    pub success: bool,
+    pub path: Option<String>,
+    pub error: Option<String>,
+}
+
 struct AppState {
     recording: bool,
     region: Option<Region>,
@@ -178,7 +185,7 @@ fn open_selector(app: AppHandle, state: tauri::State<SharedState>) -> Result<(),
 
 #[tauri::command]
 fn set_region(state: tauri::State<SharedState>, region: Region) {
-    println!("[DEBUG][set_region] 入口 region: x={}, y={}, w={}, h={}", region.x, region.y, region.width, region.height);
+    println!("[DEBUG][set_region] ====== 被调用 ====== x={}, y={}, w={}, h={}", region.x, region.y, region.width, region.height);
     let mut s = state.lock().unwrap();
     // screenshots crate 的 capture_area 使用逻辑像素(points)坐标，不需要转换
     // 浏览器的 clientX/clientY 已经是正确的逻辑像素
@@ -188,59 +195,84 @@ fn set_region(state: tauri::State<SharedState>, region: Region) {
 
 #[tauri::command]
 fn start_recording(app: AppHandle, state: tauri::State<SharedState>) -> Result<(), String> {
+    println!("[DEBUG][start_recording] ====== 被调用 ======");
     let mut s = state.lock().unwrap();
     if s.recording {
+        println!("[DEBUG][start_recording] 已经在录制中，跳过");
         return Err("Already recording".to_string());
     }
 
     let region = s.region.clone().ok_or("No region selected")?;
+    println!("[DEBUG][start_recording] region: x={}, y={}, w={}, h={}", region.x, region.y, region.width, region.height);
     s.recording = true;
     s.frames.clear();
 
     let fps = s.fps;
     drop(s);
 
+    // 显示主窗口，让用户可以看到录制状态和停止按钮
+    if let Some(main_win) = app.get_webview_window("main") {
+        println!("[DEBUG][start_recording] 显示主窗口");
+        let _ = main_win.show();
+        let _ = main_win.set_focus();
+    }
+
     let state_clone = state.inner().clone();
     let app_clone = app.clone();
 
     thread::spawn(move || {
+        println!("[DEBUG][recording_thread] 录制线程启动");
         let screens = Screen::all().unwrap_or_default();
         if screens.is_empty() {
+            println!("[DEBUG][recording_thread] 错误: 没有找到屏幕");
             return;
         }
         let screen = &screens[0];
+        println!("[DEBUG][recording_thread] 屏幕: {}x{}, scale={}",
+            screen.display_info.width, screen.display_info.height, screen.display_info.scale_factor);
         let frame_duration = Duration::from_millis(1000 / fps as u64);
 
+        let mut frame_idx = 0u32;
         loop {
             let start = Instant::now();
 
             {
                 let s = state_clone.lock().unwrap();
                 if !s.recording {
+                    println!("[DEBUG][recording_thread] 录制停止，共捕获 {} 帧", s.frames.len());
                     break;
                 }
             }
 
             // Capture screen region
-            if let Ok(img) = screen.capture_area(
-                region.x,
-                region.y,
-                region.width,
-                region.height,
-            ) {
-                let rgba = RgbaImage::from_raw(
-                    img.width(),
-                    img.height(),
-                    img.into_raw(),
-                ).unwrap();
+            match screen.capture_area(region.x, region.y, region.width, region.height) {
+                Ok(img) => {
+                    let rgba = RgbaImage::from_raw(
+                        img.width(),
+                        img.height(),
+                        img.into_raw(),
+                    ).unwrap();
 
-                let mut s = state_clone.lock().unwrap();
-                s.frames.push(rgba);
+                    let mut s = state_clone.lock().unwrap();
+                    s.frames.push(rgba);
+                    frame_idx += 1;
 
-                let _ = app_clone.emit("recording-state", RecordingState {
-                    is_recording: true,
-                    frame_count: s.frames.len() as u32,
-                });
+                    if frame_idx <= 3 || frame_idx % 10 == 0 {
+                        println!("[DEBUG][recording_thread] 捕获帧 #{}", frame_idx);
+                    }
+
+                    let _ = app_clone.emit("recording-state", RecordingState {
+                        is_recording: true,
+                        frame_count: s.frames.len() as u32,
+                    });
+                }
+                Err(e) => {
+                    if frame_idx == 0 {
+                        println!("[DEBUG][recording_thread] capture_area 失败: {:?}", e);
+                        println!("[DEBUG][recording_thread] 参数: x={}, y={}, w={}, h={}",
+                            region.x, region.y, region.width, region.height);
+                    }
+                }
             }
 
             let elapsed = start.elapsed();
@@ -248,6 +280,7 @@ fn start_recording(app: AppHandle, state: tauri::State<SharedState>) -> Result<(
                 thread::sleep(frame_duration - elapsed);
             }
         }
+        println!("[DEBUG][recording_thread] 线程退出");
     });
 
     Ok(())
@@ -255,13 +288,15 @@ fn start_recording(app: AppHandle, state: tauri::State<SharedState>) -> Result<(
 
 #[tauri::command]
 fn stop_recording(state: tauri::State<SharedState>) {
+    println!("[DEBUG][stop_recording] ====== 被调用 ======");
     let mut s = state.lock().unwrap();
     s.recording = false;
+    println!("[DEBUG][stop_recording] 录制已停止, 帧数: {}", s.frames.len());
 }
 
 #[tauri::command]
 fn save_screenshot(app: AppHandle, state: tauri::State<SharedState>) -> Result<String, String> {
-    println!("[DEBUG][save_screenshot] 入口");
+    println!("[DEBUG][save_screenshot] ====== 被调用 ======");
     let s = state.lock().unwrap();
     let region = s.region.clone().ok_or("No region selected")?;
     println!("[DEBUG][save_screenshot] region: x={}, y={}, w={}, h={}", region.x, region.y, region.width, region.height);
@@ -321,57 +356,113 @@ fn save_screenshot(app: AppHandle, state: tauri::State<SharedState>) -> Result<S
 }
 
 #[tauri::command]
-fn save_gif(state: tauri::State<SharedState>) -> Result<String, String> {
+fn save_gif(app: AppHandle, state: tauri::State<SharedState>) -> Result<(), String> {
+    println!("[DEBUG][save_gif] ====== 被调用 ======");
     let mut s = state.lock().unwrap();
 
     if s.frames.is_empty() {
-        return Err("No frames to save".to_string());
+        println!("[DEBUG][save_gif] 错误: 没有帧可保存");
+        let _ = app.emit("save-complete", SaveResult {
+            success: false,
+            path: None,
+            error: Some("No frames to save".to_string()),
+        });
+        return Ok(());
     }
-
-    // Get output directory
-    let output_dir = dirs::picture_dir()
-        .or_else(|| dirs::home_dir())
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("lovshot");
-
-    std::fs::create_dir_all(&output_dir).map_err(|e| e.to_string())?;
-
-    let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
-    let filename = output_dir.join(format!("recording_{}.gif", timestamp));
+    println!("[DEBUG][save_gif] 帧数: {}", s.frames.len());
 
     let frames = std::mem::take(&mut s.frames);
     let fps = s.fps;
     drop(s);
 
-    if frames.is_empty() {
-        return Err("No frames captured".to_string());
-    }
+    // 在后台线程编码，立即返回
+    thread::spawn(move || {
+        let output_dir = dirs::picture_dir()
+            .or_else(|| dirs::home_dir())
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("lovshot");
 
-    let (width, height) = frames[0].dimensions();
-
-    let mut file = File::create(&filename).map_err(|e| e.to_string())?;
-    let mut encoder = Encoder::new(&mut file, width as u16, height as u16, &[])
-        .map_err(|e| e.to_string())?;
-
-    encoder.set_repeat(Repeat::Infinite).map_err(|e| e.to_string())?;
-
-    let delay = (100 / fps) as u16; // centiseconds
-
-    for rgba_img in frames {
-        let mut pixels: Vec<u8> = Vec::with_capacity((width * height * 4) as usize);
-        for pixel in rgba_img.pixels() {
-            pixels.push(pixel[0]); // R
-            pixels.push(pixel[1]); // G
-            pixels.push(pixel[2]); // B
-            pixels.push(pixel[3]); // A
+        if let Err(e) = std::fs::create_dir_all(&output_dir) {
+            let _ = app.emit("save-complete", SaveResult {
+                success: false,
+                path: None,
+                error: Some(e.to_string()),
+            });
+            return;
         }
 
-        let mut frame = Frame::from_rgba_speed(width as u16, height as u16, &mut pixels, 10);
-        frame.delay = delay;
-        encoder.write_frame(&frame).map_err(|e| e.to_string())?;
-    }
+        let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+        let filename = output_dir.join(format!("recording_{}.gif", timestamp));
+        println!("[DEBUG][save_gif] 保存路径: {:?}", filename);
 
-    Ok(filename.to_string_lossy().to_string())
+        if frames.is_empty() {
+            let _ = app.emit("save-complete", SaveResult {
+                success: false,
+                path: None,
+                error: Some("No frames captured".to_string()),
+            });
+            return;
+        }
+
+        let (width, height) = frames[0].dimensions();
+        let total_frames = frames.len();
+        println!("[DEBUG][save_gif] 开始编码: {}x{}, {} 帧", width, height, total_frames);
+
+        let result = (|| -> Result<String, String> {
+            let mut file = File::create(&filename).map_err(|e| e.to_string())?;
+            let mut encoder = Encoder::new(&mut file, width as u16, height as u16, &[])
+                .map_err(|e| e.to_string())?;
+
+            encoder.set_repeat(Repeat::Infinite).map_err(|e| e.to_string())?;
+
+            let delay = (100 / fps) as u16;
+
+            for (i, rgba_img) in frames.into_iter().enumerate() {
+                let mut pixels: Vec<u8> = Vec::with_capacity((width * height * 4) as usize);
+                for pixel in rgba_img.pixels() {
+                    pixels.push(pixel[0]);
+                    pixels.push(pixel[1]);
+                    pixels.push(pixel[2]);
+                    pixels.push(pixel[3]);
+                }
+
+                let mut frame = Frame::from_rgba_speed(width as u16, height as u16, &mut pixels, 30);
+                frame.delay = delay;
+                encoder.write_frame(&frame).map_err(|e| e.to_string())?;
+
+                if i == 0 || (i + 1) % 10 == 0 || i + 1 == total_frames {
+                    println!("[DEBUG][save_gif] 编码帧 {}/{}", i + 1, total_frames);
+                }
+            }
+
+            Ok(filename.to_string_lossy().to_string())
+        })();
+
+        match result {
+            Ok(path) => {
+                println!("[DEBUG][save_gif] ====== 完成 ====== 路径: {}", path);
+                println!("[DEBUG][save_gif] 发送 save-complete 事件");
+                match app.emit("save-complete", SaveResult {
+                    success: true,
+                    path: Some(path),
+                    error: None,
+                }) {
+                    Ok(_) => println!("[DEBUG][save_gif] 事件发送成功"),
+                    Err(e) => println!("[DEBUG][save_gif] 事件发送失败: {:?}", e),
+                }
+            }
+            Err(e) => {
+                println!("[DEBUG][save_gif] ====== 错误 ====== {}", e);
+                let _ = app.emit("save-complete", SaveResult {
+                    success: false,
+                    path: None,
+                    error: Some(e),
+                });
+            }
+        }
+    });
+
+    Ok(())
 }
 
 #[tauri::command]
