@@ -18,21 +18,23 @@ pnpm build          # Type check (tsc && vite build)
 ## Architecture
 
 ### Multi-Window Design
-- **Main window** (`src/App.tsx`): Control panel showing recording status, stop button
-- **Selector window** (`public/selector.html`): Full-screen transparent overlay for region selection
+- **Main window** (`src/App.tsx`): GIF 编辑器界面，录制完成后显示
+- **Selector window** (`selector.html` → `src/Selector.tsx`): 全屏透明覆盖层，区域选择
+- **Recording overlay** (`overlay.html` → `src/RecordingOverlay.tsx`): 录制时的四角闪烁边框
 
 ### Core Flow
-1. Global hotkey `Shift+Alt+A` triggers selector window
+1. Global hotkey `⌥ A` triggers selector window
 2. User drags to select region, chooses mode (screenshot/GIF)
 3. Rust backend captures via `screenshots` crate
 4. Screenshots save to clipboard + `~/Pictures/lovshot/`
-5. GIF recording runs in background thread, encodes asynchronously
+5. GIF: recording overlay appears, frames captured in background thread
+6. Stop recording → main window shows editor for trimming/exporting
 
 ### Rust Backend (`src-tauri/src/lib.rs`)
 - `AppState` holds recording state, frames buffer, region, FPS settings
-- Commands: `get_screens`, `capture_screenshot`, `open_selector`, `set_region`, `start_recording`, `stop_recording`, `save_screenshot`, `save_gif`, `set_fps`
-- Events emitted: `recording-state` (frame count updates), `save-complete` (async save result)
-- macOS-specific: Uses `objc` crate to set window level above dock
+- Commands: `get_screens`, `capture_screenshot`, `open_selector`, `set_region`, `start_recording`, `stop_recording`, `export_gif`, `get_recording_info`, `get_filmstrip`
+- Events: `recording-state`, `recording-stopped`, `export-progress`, `export-complete`
+- macOS: Uses `objc` crate to set window level and activation policy (accessory mode)
 
 ### Key Dependencies
 - **Rust**: `screenshots` (screen capture), `gif` (encoding), `image` (processing), `tauri-plugin-clipboard-manager`
@@ -43,7 +45,8 @@ pnpm build          # Type check (tsc && vite build)
 - **Tauri Commands**: Define with `#[tauri::command]`, register in `invoke_handler`
 - **Frontend-Backend IPC**: `invoke()` for commands, `listen()` for events
 - **Coordinate System**: Selector passes logical pixels; Rust uses them directly with `capture_area`
-- **Async GIF Save**: `save_gif` returns immediately, emits `save-complete` when done
+- **Multi-page Vite**: `vite.config.ts` defines multiple HTML entry points (main, selector, overlay)
+- **Accessory App**: `LSUIElement` in Info.plist + runtime `setActivationPolicy` for menu bar mode
 
 ## Bundle Identifier
 
