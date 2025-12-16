@@ -95,6 +95,7 @@ pub fn run() {
             commands::get_frame_thumbnail,
             commands::get_filmstrip,
             commands::save_screenshot,
+            commands::open_file,
             // Scroll capture commands
             commands::start_scroll_capture,
             commands::capture_scroll_frame_auto,
@@ -109,6 +110,8 @@ pub fn run() {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == "main" {
                     window.hide().unwrap();
+                    // Switch back to Accessory policy when hiding main window
+                    windows::set_activation_policy(1);
                     api.prevent_close();
                 }
             }

@@ -8,6 +8,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use crate::state::SharedState;
 use crate::types::{RecordingInfo, RecordingState};
 use crate::tray::{create_recording_overlay, update_tray_icon};
+use crate::windows::set_activation_policy;
 
 #[tauri::command]
 pub fn start_recording(app: AppHandle, state: tauri::State<SharedState>) -> Result<(), String> {
@@ -62,6 +63,8 @@ pub fn start_recording(app: AppHandle, state: tauri::State<SharedState>) -> Resu
                     }
 
                     if let Some(main_win) = app_clone.get_webview_window("main") {
+                        // Switch to Regular activation policy so window stays visible after cmd+tab
+                        set_activation_policy(0);
                         let _ = main_win.show();
                         let _ = main_win.set_focus();
                     }
@@ -147,8 +150,15 @@ pub fn get_recording_info(state: tauri::State<SharedState>) -> RecordingInfo {
 }
 
 #[tauri::command]
-pub fn discard_recording(state: tauri::State<SharedState>) {
+pub fn discard_recording(app: AppHandle, state: tauri::State<SharedState>) {
     println!("[DEBUG][discard_recording] 丢弃录制数据");
     let mut s = state.lock().unwrap();
     s.frames.clear();
+    drop(s);
+
+    // Hide main window and switch back to Accessory policy
+    if let Some(main_win) = app.get_webview_window("main") {
+        let _ = main_win.hide();
+        set_activation_policy(1);
+    }
 }

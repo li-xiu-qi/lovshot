@@ -4,6 +4,7 @@ use mouse_position::mouse_position::Mouse;
 
 use crate::state::SharedState;
 use crate::types::{CaptureMode, Region};
+use crate::windows::set_activation_policy;
 
 #[cfg(target_os = "macos")]
 use crate::window_detect;
@@ -24,6 +25,8 @@ pub fn open_selector(app: AppHandle, state: tauri::State<SharedState>) -> Result
         if let Some(main_win) = app.get_webview_window("main") {
             println!("[DEBUG][open_selector] 隐藏主窗口");
             let _ = main_win.hide();
+            // Switch back to Accessory policy when hiding main window
+            set_activation_policy(1);
         }
     } else {
         println!("[DEBUG][open_selector] 有编辑中的数据，保持主窗口");
@@ -154,6 +157,8 @@ pub fn open_selector_internal(app: AppHandle) -> Result<(), String> {
     if !has_frames {
         if let Some(main_win) = app.get_webview_window("main") {
             let _ = main_win.hide();
+            // Switch back to Accessory policy when hiding main window
+            set_activation_policy(1);
         }
     }
 

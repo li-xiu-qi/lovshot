@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { save } from "@tauri-apps/plugin-dialog";
 import "./App.css";
 
-type AppMode = "idle" | "recording" | "editing" | "exporting";
+type AppMode = "idle" | "recording" | "editing";
 
 interface RecordingState {
   is_recording: boolean;
@@ -79,7 +79,8 @@ function App() {
   // Filmstrip
   const [filmstrip, setFilmstrip] = useState<string[]>([]);
 
-  // 导出进度
+  // 导出状态
+  const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState<ExportProgress | null>(null);
 
   // Filmstrip 拖动状态
@@ -142,6 +143,7 @@ function App() {
       try {
         const info = await invoke<RecordingInfo>("get_recording_info");
         setRecordingInfo(info);
+        setSavedPath("");
         const initialConfig: ExportConfig = {
           start_frame: 0,
           end_frame: info.frame_count,
@@ -168,14 +170,10 @@ function App() {
     });
 
     const unlistenExport = listen<SaveResult>("export-complete", (event) => {
-      setMode("idle");
-      setRecordingInfo(null);
-      setSizeEstimate(null);
-      setFilmstrip([]);
+      setExporting(false);
       setExportProgress(null);
       if (event.payload.success && event.payload.path) {
         setSavedPath(event.payload.path);
-        setTimeout(() => setSavedPath(""), 3000);
       } else if (event.payload.error) {
         console.error("导出失败:", event.payload.error);
       }
@@ -214,21 +212,14 @@ function App() {
 
       if (!path) return; // User cancelled
 
-      setMode("exporting");
+      setExporting(true);
       await invoke("export_gif", { config: { ...exportConfig, output_path: path } });
     } catch (e) {
       console.error("导出失败:", e);
-      setMode("editing");
+      setExporting(false);
     }
   };
 
-  const handleDiscard = async () => {
-    await invoke("discard_recording");
-    setMode("idle");
-    setRecordingInfo(null);
-    setSizeEstimate(null);
-    setFilmstrip([]);
-  };
 
   // Filmstrip 拖动逻辑
   const getFrameFromX = useCallback((clientX: number): number => {
@@ -433,33 +424,44 @@ function App() {
               </div>
             )}
 
-            {/* 操作按钮 */}
-            <div className="editor-actions">
-              <button className="btn-secondary" onClick={handleDiscard}>Discard</button>
-              <button className="btn-primary" onClick={handleExport}>Export GIF</button>
+            {/* 导出按钮 */}
+            <div className="export-actions">
+              <button
+                className="btn-primary btn-export"
+                onClick={handleExport}
+                disabled={exporting}
+              >
+                {exporting ? (
+                  exportProgress ? (
+                    <>
+                      <span className="export-progress-text">
+                        {Math.round((exportProgress.current / exportProgress.total) * 100)}%
+                      </span>
+                      <span
+                        className="export-progress-bar"
+                        style={{ width: `${(exportProgress.current / exportProgress.total) * 100}%` }}
+                      />
+                    </>
+                  ) : (
+                    "Exporting..."
+                  )
+                ) : (
+                  "Export GIF"
+                )}
+              </button>
+              {savedPath && (
+                <button
+                  className="btn-open"
+                  onClick={() => invoke("open_file", { path: savedPath })}
+                  title={savedPath}
+                >
+                  Open
+                </button>
+              )}
             </div>
           </div>
         )}
-
-        {mode === "exporting" && (
-          <div className="exporting-status">
-            <p className="saving-hint">
-              Exporting GIF...
-              {exportProgress && ` (${exportProgress.current}/${exportProgress.total})`}
-            </p>
-            {exportProgress && (
-              <div className="progress-bar">
-                <div
-                  className="progress-fill"
-                  style={{ width: `${(exportProgress.current / exportProgress.total) * 100}%` }}
-                />
-              </div>
-            )}
-          </div>
-        )}
       </div>
-
-      {savedPath && <div className="saved-toast">Saved!</div>}
     </main>
   );
 }

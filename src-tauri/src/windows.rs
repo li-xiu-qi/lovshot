@@ -1,5 +1,20 @@
 use tauri::{AppHandle, Manager, WebviewWindowBuilder, WebviewUrl};
 
+/// Set macOS activation policy
+/// policy: 0 = Regular (normal app, shows in Dock when windows open)
+///         1 = Accessory (menu bar app, no Dock icon)
+#[cfg(target_os = "macos")]
+pub fn set_activation_policy(policy: i64) {
+    use objc::{msg_send, sel, sel_impl, class};
+    unsafe {
+        let ns_app: *mut objc::runtime::Object = msg_send![class!(NSApplication), sharedApplication];
+        let _: () = msg_send![ns_app, setActivationPolicy: policy];
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn set_activation_policy(_policy: i64) {}
+
 /// Open the settings window
 pub fn open_settings_window(app: AppHandle) -> Result<(), String> {
     #[cfg(target_os = "macos")]

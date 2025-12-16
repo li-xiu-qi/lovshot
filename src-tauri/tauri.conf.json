@@ -13,7 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "Lovshot",
+        "title": "Lovshot GIF Editor",
         "width": 320,
         "height": 420,
         "resizable": true,
