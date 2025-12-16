@@ -182,10 +182,15 @@ fn open_selector(app: AppHandle, state: tauri::State<SharedState>) -> Result<(),
         return Ok(());
     }
 
-    // Hide main window
-    if let Some(main_win) = app.get_webview_window("main") {
-        println!("[DEBUG][open_selector] 隐藏主窗口");
-        let _ = main_win.hide();
+    // 如果没有正在编辑的录制数据，才隐藏主窗口
+    let has_frames = !state.lock().unwrap().frames.is_empty();
+    if !has_frames {
+        if let Some(main_win) = app.get_webview_window("main") {
+            println!("[DEBUG][open_selector] 隐藏主窗口");
+            let _ = main_win.hide();
+        }
+    } else {
+        println!("[DEBUG][open_selector] 有编辑中的数据，保持主窗口");
     }
 
     // Use screenshots crate for full screen size (including dock/menu bar)
@@ -275,8 +280,11 @@ fn start_recording(app: AppHandle, state: tauri::State<SharedState>) -> Result<(
     let recording_fps = s.recording_fps;  // 使用固定录制帧率
     drop(s);
 
-    // 录制时不显示窗口，只更新托盘图标
+    // 更新托盘图标
     update_tray_icon(&app, true);
+
+    // 创建录制边框覆盖窗口
+    create_recording_overlay(&app, &region);
 
     let state_clone = state.inner().clone();
     let app_clone = app.clone();
@@ -306,6 +314,11 @@ fn start_recording(app: AppHandle, state: tauri::State<SharedState>) -> Result<(
 
                     // 恢复托盘图标
                     update_tray_icon(&app_clone, false);
+
+                    // 关闭录制边框覆盖窗口
+                    if let Some(overlay) = app_clone.get_webview_window("recording-overlay") {
+                        let _ = overlay.close();
+                    }
 
                     // 显示主窗口进入编辑模式
                     if let Some(main_win) = app_clone.get_webview_window("main") {
@@ -877,6 +890,18 @@ pub fn run() {
             }
         })
         .setup(move |app| {
+            // macOS: 设置为 accessory 模式，不显示在 Dock 和 Cmd+Tab
+            #[cfg(target_os = "macos")]
+            {
+                use objc::{msg_send, sel, sel_impl, class};
+                unsafe {
+                    let app_class = class!(NSApplication);
+                    let ns_app: *mut objc::runtime::Object = msg_send![app_class, sharedApplication];
+                    // NSApplicationActivationPolicyAccessory = 1
+                    let _: () = msg_send![ns_app, setActivationPolicy: 1_i64];
+                }
+            }
+
             // 创建系统托盘
             let tray_icon = load_tray_icon(false)
                 .unwrap_or_else(|| app.default_window_icon().unwrap().clone());
@@ -937,6 +962,64 @@ fn load_tray_icon(is_recording: bool) -> Option<TauriImage<'static>> {
     Some(TauriImage::new_owned(rgba.into_raw(), width, height))
 }
 
+/// 创建录制边框覆盖窗口
+fn create_recording_overlay(app: &AppHandle, region: &Region) {
+    // 如果已存在则不创建
+    if app.get_webview_window("recording-overlay").is_some() {
+        return;
+    }
+
+    let screens = Screen::all().unwrap_or_default();
+    if screens.is_empty() {
+        return;
+    }
+
+    let screen = &screens[0];
+    let scale = screen.display_info.scale_factor;
+    let screen_x = screen.display_info.x;
+    let screen_y = screen.display_info.y;
+    let width = screen.display_info.width;
+    let height = screen.display_info.height;
+
+    // 传递区域参数给前端
+    let url = format!(
+        "/overlay.html?x={}&y={}&w={}&h={}",
+        region.x, region.y, region.width, region.height
+    );
+
+    let win = WebviewWindowBuilder::new(app, "recording-overlay", WebviewUrl::App(url.into()))
+        .title("Recording Overlay")
+        .decorations(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .transparent(true)
+        .shadow(false)
+        .build();
+
+    if let Ok(win) = win {
+        let physical_width = (width as f32 * scale) as u32;
+        let physical_height = (height as f32 * scale) as u32;
+        let physical_x = (screen_x as f32 * scale) as i32;
+        let physical_y = (screen_y as f32 * scale) as i32;
+
+        let _ = win.set_size(PhysicalSize::new(physical_width, physical_height));
+        let _ = win.set_position(PhysicalPosition::new(physical_x, physical_y));
+        let _ = win.set_ignore_cursor_events(true);
+
+        // 设置窗口层级高于 dock
+        #[cfg(target_os = "macos")]
+        {
+            use objc::{msg_send, sel, sel_impl};
+            let _ = win.with_webview(|webview| {
+                unsafe {
+                    let ns_window = webview.ns_window() as *mut objc::runtime::Object;
+                    let _: () = msg_send![ns_window, setLevel: 1000_i64];
+                }
+            });
+        }
+    }
+}
+
 /// 更新托盘图标（录制状态）
 fn update_tray_icon(app: &AppHandle, is_recording: bool) {
     if let Some(icon) = load_tray_icon(is_recording) {
@@ -964,9 +1047,13 @@ fn open_selector_internal(app: AppHandle) -> Result<(), String> {
         return Ok(());
     }
 
-    // Hide main window
-    if let Some(main_win) = app.get_webview_window("main") {
-        let _ = main_win.hide();
+    // 如果没有正在编辑的录制数据，才隐藏主窗口
+    let state = app.state::<SharedState>();
+    let has_frames = !state.lock().unwrap().frames.is_empty();
+    if !has_frames {
+        if let Some(main_win) = app.get_webview_window("main") {
+            let _ = main_win.hide();
+        }
     }
 
     let screens = Screen::all().map_err(|e| e.to_string())?;
