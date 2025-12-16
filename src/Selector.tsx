@@ -28,6 +28,7 @@ export default function Selector() {
   const [hoveredWindow, setHoveredWindow] = useState<SelectionRect | null>(null);
   // Scroll capture state
   const [isScrollCapturing, setIsScrollCapturing] = useState(false);
+  const [isScrollPaused, setIsScrollPaused] = useState(false); // Paused but preview retained
   const [scrollProgress, setScrollProgress] = useState<ScrollCaptureProgress | null>(null);
 
   const startPos = useRef({ x: 0, y: 0 });
@@ -143,10 +144,12 @@ export default function Selector() {
 
   // Finish scroll capture
   const finishScrollCapture = useCallback(async () => {
-    if (!isScrollCapturing) return;
+    if (!isScrollCapturing && !isScrollPaused) return;
     try {
       const win = getCurrentWindow();
-      await win.setIgnoreCursorEvents(false);
+      if (isScrollCapturing) {
+        await win.setIgnoreCursorEvents(false);
+      }
       await win.hide();
       await new Promise((r) => setTimeout(r, 50));
       await invoke<string>("finish_scroll_capture");
@@ -154,18 +157,30 @@ export default function Selector() {
     } catch (e) {
       console.error("Failed to finish scroll capture:", e);
     }
-  }, [isScrollCapturing]);
+  }, [isScrollCapturing, isScrollPaused]);
 
-  // Cancel scroll capture
-  const cancelScrollCapture = useCallback(async () => {
+  // Stop scroll capture (pause) - keep preview, show toolbar
+  const stopScrollCapture = useCallback(async () => {
     if (!isScrollCapturing) return;
     const win = getCurrentWindow();
     await win.setIgnoreCursorEvents(false);
+    setIsScrollCapturing(false);
+    setIsScrollPaused(true);
+    setShowToolbar(true);
+    // Keep scrollProgress for preview display
+  }, [isScrollCapturing]);
+
+  // Discard scroll capture completely
+  const discardScrollCapture = useCallback(async () => {
     await invoke("cancel_scroll_capture");
     setIsScrollCapturing(false);
+    setIsScrollPaused(false);
     setScrollProgress(null);
-    setShowToolbar(true);
-  }, [isScrollCapturing]);
+    setShowToolbar(false);
+    setShowHint(true);
+    setSelectionRect(null);
+    if (selectionRef.current) selectionRef.current.style.display = "none";
+  }, []);
 
   // Poll for scroll changes (since overlay window blocks wheel events to underlying windows)
   useEffect(() => {
@@ -302,9 +317,19 @@ export default function Selector() {
   useEffect(() => {
     const handleKeyDown = async (e: KeyboardEvent) => {
       if (isScrollCapturing) {
-        // In scroll capture mode: Enter to finish, ESC to cancel
+        // In active scroll capture mode: ESC to stop (pause), Enter to finish
         if (e.key === "Escape") {
-          await cancelScrollCapture();
+          await stopScrollCapture();
+        } else if (e.key === "Enter") {
+          await finishScrollCapture();
+        }
+        return;
+      }
+
+      if (isScrollPaused) {
+        // In paused state: ESC to discard, Enter to save
+        if (e.key === "Escape") {
+          await discardScrollCapture();
         } else if (e.key === "Enter") {
           await finishScrollCapture();
         }
@@ -326,7 +351,7 @@ export default function Selector() {
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [selectionRect, doCapture, closeWindow, isScrollCapturing, cancelScrollCapture, finishScrollCapture]);
+  }, [selectionRect, doCapture, closeWindow, isScrollCapturing, isScrollPaused, stopScrollCapture, discardScrollCapture, finishScrollCapture]);
 
   const toolbarStyle: React.CSSProperties = selectionRect
     ? {
@@ -387,57 +412,86 @@ export default function Selector() {
 
       {showToolbar && (
         <div id="toolbar" className="toolbar" style={toolbarStyle}>
-          <button
-            className={`toolbar-btn ${mode === "image" ? "active" : ""}`}
-            onClick={() => setMode("image")}
-            title="Screenshot (S)"
-          >
-            📷
-          </button>
-          <button
-            className={`toolbar-btn ${mode === "gif" ? "active" : ""}`}
-            onClick={() => setMode("gif")}
-            title="Record GIF (G)"
-          >
-            🎬
-          </button>
-          <button
-            className={`toolbar-btn ${mode === "scroll" ? "active" : ""}`}
-            onClick={() => setMode("scroll")}
-            title="Scroll Capture (L)"
-          >
-            📜
-          </button>
-          <button
-            className="toolbar-btn"
-            disabled
-            style={{ opacity: 0.4, cursor: "not-allowed" }}
-            title="Record Video (V)"
-          >
-            🎥
-          </button>
-          <div className="toolbar-divider" />
-          <button
-            className="toolbar-btn"
-            onClick={(e) => {
-              e.stopPropagation();
-              doCapture();
-            }}
-            title="Confirm (Enter)"
-          >
-            ✓
-          </button>
-          <button className="toolbar-btn" onClick={closeWindow} title="Cancel (ESC)">
-            ✕
-          </button>
+          {isScrollPaused ? (
+            // Paused scroll capture: show save/discard only
+            <>
+              <button
+                className="toolbar-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  finishScrollCapture();
+                }}
+                title="Save (Enter)"
+              >
+                ✓
+              </button>
+              <button
+                className="toolbar-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  discardScrollCapture();
+                }}
+                title="Discard (ESC)"
+              >
+                ✕
+              </button>
+            </>
+          ) : (
+            // Normal mode: show all options
+            <>
+              <button
+                className={`toolbar-btn ${mode === "image" ? "active" : ""}`}
+                onClick={() => setMode("image")}
+                title="Screenshot (S)"
+              >
+                📷
+              </button>
+              <button
+                className={`toolbar-btn ${mode === "gif" ? "active" : ""}`}
+                onClick={() => setMode("gif")}
+                title="Record GIF (G)"
+              >
+                🎬
+              </button>
+              <button
+                className={`toolbar-btn ${mode === "scroll" ? "active" : ""}`}
+                onClick={() => setMode("scroll")}
+                title="Scroll Capture (L)"
+              >
+                📜
+              </button>
+              <button
+                className="toolbar-btn"
+                disabled
+                style={{ opacity: 0.4, cursor: "not-allowed" }}
+                title="Record Video (V)"
+              >
+                🎥
+              </button>
+              <div className="toolbar-divider" />
+              <button
+                className="toolbar-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  doCapture();
+                }}
+                title="Confirm (Enter)"
+              >
+                ✓
+              </button>
+              <button className="toolbar-btn" onClick={closeWindow} title="Cancel (ESC)">
+                ✕
+              </button>
+            </>
+          )}
         </div>
       )}
 
-      {/* Scroll capture preview panel */}
-      {isScrollCapturing && scrollProgress && selectionRect && (
+      {/* Scroll capture preview panel - show during capture AND when paused */}
+      {(isScrollCapturing || isScrollPaused) && scrollProgress && selectionRect && (
         <div className="scroll-preview-panel" style={previewStyle}>
           <div className="scroll-preview-header">
-            <span>Scroll to capture</span>
+            <span>{isScrollPaused ? "Scroll stopped" : "Scroll to capture"}</span>
             <span className="scroll-stats">
               {scrollProgress.frame_count} frames · {scrollProgress.total_height}px
             </span>
@@ -450,8 +504,11 @@ export default function Selector() {
             />
           </div>
           <div className="scroll-hint">
-            Scroll content below, then<br />
-            press <kbd>⌥S</kbd> again to save
+            {isScrollPaused ? (
+              <>Press <kbd>Enter</kbd> to save, <kbd>ESC</kbd> to discard</>
+            ) : (
+              <>Scroll content below, then<br />press <kbd>ESC</kbd> to stop</>
+            )}
           </div>
         </div>
       )}

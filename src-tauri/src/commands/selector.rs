@@ -119,6 +119,18 @@ pub fn clear_pending_mode(state: tauri::State<SharedState>) {
     state.lock().unwrap().pending_mode = None;
 }
 
+/// Activate the window under cursor so it can receive scroll events
+#[tauri::command]
+pub fn activate_window_under_cursor() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        if let Mouse::Position { x, y } = Mouse::get_mouse_position() {
+            return window_detect::activate_window_at_position(x as f64, y as f64);
+        }
+    }
+    false
+}
+
 /// Internal function to open selector (called from shortcut handler)
 pub fn open_selector_internal(app: AppHandle) -> Result<(), String> {
     println!("[DEBUG][open_selector_internal] 入口");

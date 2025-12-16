@@ -46,11 +46,11 @@ pub fn run() {
                         return;
                     }
 
-                    // Check if scroll capturing - if so, emit finish event
+                    // Check if scroll capturing - if so, emit stop event (not finish)
                     let is_scroll_capturing = state_for_shortcut.lock().unwrap().scroll_capturing;
                     if is_scroll_capturing {
-                        println!("[DEBUG][shortcut] 完成滚动截图");
-                        let _ = app.emit("scroll-capture-finish", ());
+                        println!("[DEBUG][shortcut] 停止滚动截图（进入暂停状态）");
+                        let _ = app.emit("scroll-capture-stop", ());
                         return;
                     }
 

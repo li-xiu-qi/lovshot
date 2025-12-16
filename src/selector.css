@@ -294,3 +294,58 @@ kbd {
   border-top: 1px solid var(--border);
   background: var(--muted);
 }
+
+/* Scroll ready overlay */
+.scroll-ready-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 300;
+}
+
+.scroll-ready-panel {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 24px 32px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
+  text-align: center;
+  max-width: 320px;
+}
+
+.scroll-ready-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+}
+
+.scroll-ready-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--foreground);
+  margin-bottom: 8px;
+}
+
+.scroll-ready-desc {
+  font-size: 13px;
+  color: var(--muted-foreground);
+  line-height: 1.5;
+  margin-bottom: 20px;
+}
+
+.scroll-ready-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-bottom: 12px;
+}
+
+.scroll-ready-actions .scroll-btn {
+  min-width: 100px;
+}
+
+.scroll-ready-hint {
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
