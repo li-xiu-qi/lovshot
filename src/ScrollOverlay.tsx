@@ -157,7 +157,7 @@ export default function ScrollOverlay() {
     await getCurrentWindow().destroy();
   };
 
-  const startResize = (direction: "north" | "south" | "east" | "west" | "northEast" | "northWest" | "southEast" | "southWest") => async (e: React.MouseEvent) => {
+  const startResize = (direction: "North" | "South" | "East" | "West" | "NorthEast" | "NorthWest" | "SouthEast" | "SouthWest") => async (e: React.MouseEvent) => {
     e.preventDefault();
     await getCurrentWindow().startResizeDragging(direction);
   };
@@ -165,14 +165,14 @@ export default function ScrollOverlay() {
   return (
     <div className="scroll-overlay-container">
       {/* Window resize handles */}
-      <div className="resize-handle resize-n" onMouseDown={startResize("north")} />
-      <div className="resize-handle resize-s" onMouseDown={startResize("south")} />
-      <div className="resize-handle resize-e" onMouseDown={startResize("east")} />
-      <div className="resize-handle resize-w" onMouseDown={startResize("west")} />
-      <div className="resize-handle resize-nw" onMouseDown={startResize("northWest")} />
-      <div className="resize-handle resize-ne" onMouseDown={startResize("northEast")} />
-      <div className="resize-handle resize-sw" onMouseDown={startResize("southWest")} />
-      <div className="resize-handle resize-se" onMouseDown={startResize("southEast")} />
+      <div className="resize-handle resize-n" onMouseDown={startResize("North")} />
+      <div className="resize-handle resize-s" onMouseDown={startResize("South")} />
+      <div className="resize-handle resize-e" onMouseDown={startResize("East")} />
+      <div className="resize-handle resize-w" onMouseDown={startResize("West")} />
+      <div className="resize-handle resize-nw" onMouseDown={startResize("NorthWest")} />
+      <div className="resize-handle resize-ne" onMouseDown={startResize("NorthEast")} />
+      <div className="resize-handle resize-sw" onMouseDown={startResize("SouthWest")} />
+      <div className="resize-handle resize-se" onMouseDown={startResize("SouthEast")} />
 
       <button className="btn-close" onClick={handleCancel} title="Close">
         <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
