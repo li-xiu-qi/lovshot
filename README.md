@@ -21,6 +21,7 @@
 
 - **Region Screenshot** - Select any area, save to clipboard and disk instantly
 - **GIF Recording** - Record screen regions with built-in editor for trimming
+- **Scroll Capture** - Capture long pages by auto-scrolling *(experimental)*
 - **Global Hotkey** - `⌥ A` activates from anywhere, no window switching
 - **Menu Bar App** - Runs quietly without cluttering Dock or Cmd+Tab
 
