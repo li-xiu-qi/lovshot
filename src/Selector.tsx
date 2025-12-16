@@ -18,10 +18,12 @@ export default function Selector() {
   const [showHint, setShowHint] = useState(true);
   const [showToolbar, setShowToolbar] = useState(false);
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
+  const [hoveredWindow, setHoveredWindow] = useState<SelectionRect | null>(null);
 
   const startPos = useRef({ x: 0, y: 0 });
   const selectionRef = useRef<HTMLDivElement>(null);
   const sizeRef = useRef<HTMLDivElement>(null);
+  const lastDetectTime = useRef(0);
 
   const closeWindow = useCallback(async () => {
     await getCurrentWindow().close();
@@ -38,18 +40,46 @@ export default function Selector() {
     });
   }, []);
 
-  // Track mouse position globally
+  // Track mouse position and detect window under cursor (throttled)
   useEffect(() => {
-    const handler = (e: MouseEvent) => setMousePos({ x: e.clientX, y: e.clientY });
+    const handler = async (e: MouseEvent) => {
+      setMousePos({ x: e.clientX, y: e.clientY });
+
+      // Only detect window when in hover mode (not selecting, not showing toolbar)
+      if (isSelecting || showToolbar) return;
+
+      // Throttle: max once per 50ms
+      const now = Date.now();
+      if (now - lastDetectTime.current < 50) return;
+      lastDetectTime.current = now;
+
+      const windowRegion = await invoke<{ x: number; y: number; width: number; height: number } | null>(
+        "get_window_at_cursor"
+      );
+
+      if (windowRegion) {
+        setHoveredWindow({
+          x: windowRegion.x,
+          y: windowRegion.y,
+          w: windowRegion.width,
+          h: windowRegion.height,
+        });
+      } else {
+        setHoveredWindow(null);
+      }
+    };
     document.addEventListener("mousemove", handler);
 
-    // Get initial mouse position from Rust
+    // Get initial mouse position and window from Rust
     invoke<[number, number] | null>("get_mouse_position").then((pos) => {
       if (pos) setMousePos({ x: pos[0], y: pos[1] });
     });
+    invoke<{ x: number; y: number; width: number; height: number } | null>("get_window_at_cursor").then((win) => {
+      if (win) setHoveredWindow({ x: win.x, y: win.y, w: win.width, h: win.height });
+    });
 
     return () => document.removeEventListener("mousemove", handler);
-  }, []);
+  }, [isSelecting, showToolbar]);
 
   const doCapture = useCallback(async () => {
     if (!selectionRect) return;
@@ -85,6 +115,7 @@ export default function Selector() {
     setShowToolbar(false);
     setSelectionRect(null);
     setShowHint(false);
+    setHoveredWindow(null);
 
     startPos.current = { x: e.clientX, y: e.clientY };
     setIsSelecting(true);
@@ -193,6 +224,7 @@ export default function Selector() {
     : {};
 
   const showCrosshair = showHint && !isSelecting && !showToolbar && mousePos;
+  const showWindowHighlight = showHint && !isSelecting && !showToolbar && hoveredWindow;
 
   return (
     <div
@@ -201,6 +233,17 @@ export default function Selector() {
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
     >
+      {showWindowHighlight && (
+        <div
+          className="window-highlight"
+          style={{
+            left: hoveredWindow!.x,
+            top: hoveredWindow!.y,
+            width: hoveredWindow!.w,
+            height: hoveredWindow!.h,
+          }}
+        />
+      )}
       {showCrosshair && (
         <>
           <div className="crosshair-h" style={{ top: mousePos!.y }} />
