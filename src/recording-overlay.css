@@ -31,6 +31,11 @@ body,
   animation: pulse 0.8s ease-in-out infinite;
 }
 
+.corner.static {
+  animation: none;
+  opacity: 0.8;
+}
+
 @keyframes pulse {
   0%, 100% {
     opacity: 1;

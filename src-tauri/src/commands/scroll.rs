@@ -459,7 +459,6 @@ pub fn open_scroll_overlay(app: AppHandle, state: tauri::State<SharedState>, reg
     }
 
     let screen = &screens[0];
-    let scale = screen.display_info.scale_factor;
 
     // Position the overlay to the right of the selection region
     let panel_width = 220.0;
@@ -481,9 +480,10 @@ pub fn open_scroll_overlay(app: AppHandle, state: tauri::State<SharedState>, reg
     // Store region for capture
     {
         let mut s = state.lock().unwrap();
-        s.region = Some(region);
+        s.region = Some(region.clone());
     }
 
+    // Build window WITHOUT focus - critical for scroll events to pass through
     let win = WebviewWindowBuilder::new(&app, "scroll-overlay", WebviewUrl::App("/scroll-overlay.html".into()))
         .title("Lovshot Scroll")
         .inner_size(panel_width as f64, panel_height as f64)
@@ -492,14 +492,36 @@ pub fn open_scroll_overlay(app: AppHandle, state: tauri::State<SharedState>, reg
         .decorations(false)
         .resizable(true)
         .always_on_top(true)
-        .focused(true)
+        .focused(false)  // Don't steal focus!
         .transparent(true)
         .build()
         .map_err(|e| e.to_string())?;
 
     win.show().map_err(|e| e.to_string())?;
-    win.set_focus().map_err(|e| e.to_string())?;
 
-    println!("[DEBUG][open_scroll_overlay] 悬浮窗创建成功");
+    // Set window as non-activating panel on macOS
+    #[cfg(target_os = "macos")]
+    {
+        use objc::{msg_send, sel, sel_impl};
+        let _ = win.with_webview(|webview| {
+            unsafe {
+                let ns_window = webview.ns_window() as *mut objc::runtime::Object;
+                // Set high window level so it stays on top
+                let _: () = msg_send![ns_window, setLevel: 1000_i64];
+                // Make it a non-activating panel - won't steal focus when clicked
+                let _: () = msg_send![ns_window, setStyleMask: 128_u64]; // NSWindowStyleMaskNonactivatingPanel
+            }
+        });
+    }
+
+    // Activate the window under the capture region (center point)
+    #[cfg(target_os = "macos")]
+    {
+        let center_x = region.x as f64 + region.width as f64 / 2.0;
+        let center_y = region.y as f64 + region.height as f64 / 2.0;
+        crate::window_detect::activate_window_at_position(center_x, center_y);
+    }
+
+    println!("[DEBUG][open_scroll_overlay] 悬浮窗创建成功 (non-activating)");
     Ok(())
 }

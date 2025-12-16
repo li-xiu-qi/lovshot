@@ -63,6 +63,20 @@ export default function ScrollOverlay() {
     return () => { unlisten.then(fn => fn()); };
   }, []);
 
+  // ESC to cancel
+  useEffect(() => {
+    const handleKeyDown = async (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        try {
+          await invoke("cancel_scroll_capture");
+        } catch { /* ignore */ }
+        await getCurrentWindow().destroy();
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
   const handleMouseMove = useCallback((e: MouseEvent) => {
     const edge = draggingRef.current;
     if (!edge || !containerRef.current) return;

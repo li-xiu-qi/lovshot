@@ -101,26 +101,24 @@ export default function Selector() {
       await invoke("start_recording");
       await closeWindow();
     } else if (mode === "scroll") {
-      // Scroll mode: open the non-activating overlay window, then close selector
-      console.log("[Selector] 进入 scroll 模式，打开悬浮窗");
+      // Scroll mode: close selector first, then open scroll overlay
+      console.log("[Selector] 进入 scroll 模式");
       const win = getCurrentWindow();
 
       try {
-        // First hide selector window
-        await win.hide();
-        await new Promise((r) => setTimeout(r, 50));
+        // Close selector window first to avoid intercepting events
+        await win.destroy();
 
-        // Open the scroll overlay (non-activating panel)
+        // Small delay to ensure window is fully closed
+        await new Promise((r) => setTimeout(r, 100));
+
+        // Open the scroll overlay
         await invoke("open_scroll_overlay", { region });
 
         // Start capturing
         await invoke("start_scroll_capture");
-
-        // Close selector window
-        await win.close();
       } catch (e) {
         console.error("[Selector] Failed to start scroll capture:", e);
-        await win.show();
       }
     }
   }, [selectionRect, mode, closeWindow]);

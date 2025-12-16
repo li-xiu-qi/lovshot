@@ -170,6 +170,110 @@ unsafe fn get_number_from_dict(dict: CFDictionaryRef, key: &CFString) -> Option<
     num.to_f64()
 }
 
+/// Get the PID of the window at the given position
+/// Returns None if no window found
+pub fn get_window_pid_at_position(x: f64, y: f64) -> Option<i32> {
+    unsafe {
+        let window_list = CGWindowListCopyWindowInfo(
+            kCGWindowListOptionOnScreenOnly,
+            kCGNullWindowID,
+        );
+
+        if window_list.is_null() {
+            return None;
+        }
+
+        let windows: core_foundation::array::CFArray<CFType> =
+            core_foundation::array::CFArray::wrap_under_get_rule(window_list as _);
+
+        for i in 0..windows.len() {
+            let Some(window) = windows.get(i) else { continue };
+            let dict_ref = window.as_CFTypeRef() as CFDictionaryRef;
+
+            // Get window layer - only consider normal windows (layer 0)
+            let layer_key = CFString::new("kCGWindowLayer");
+            let layer_ptr = core_foundation::dictionary::CFDictionaryGetValue(
+                dict_ref,
+                layer_key.as_CFTypeRef() as *const _,
+            );
+
+            let layer = if !layer_ptr.is_null() {
+                let layer_num: CFNumber = CFNumber::wrap_under_get_rule(layer_ptr as _);
+                layer_num.to_i32().unwrap_or(0)
+            } else {
+                0
+            };
+
+            if layer != 0 {
+                continue;
+            }
+
+            // Get window bounds
+            let bounds_key = CFString::new("kCGWindowBounds");
+            let bounds_ptr = core_foundation::dictionary::CFDictionaryGetValue(
+                dict_ref,
+                bounds_key.as_CFTypeRef() as *const _,
+            );
+
+            if bounds_ptr.is_null() {
+                continue;
+            }
+
+            let bounds_dict = bounds_ptr as CFDictionaryRef;
+
+            let x_key = CFString::new("X");
+            let y_key = CFString::new("Y");
+            let width_key = CFString::new("Width");
+            let height_key = CFString::new("Height");
+
+            let Some(win_x) = get_number_from_dict(bounds_dict, &x_key) else { continue };
+            let Some(win_y) = get_number_from_dict(bounds_dict, &y_key) else { continue };
+            let Some(win_w) = get_number_from_dict(bounds_dict, &width_key) else { continue };
+            let Some(win_h) = get_number_from_dict(bounds_dict, &height_key) else { continue };
+
+            // Check if cursor is inside this window
+            if x >= win_x && x < win_x + win_w && y >= win_y && y < win_y + win_h {
+                // Get owning application PID
+                let pid_key = CFString::new("kCGWindowOwnerPID");
+                let pid_ptr = core_foundation::dictionary::CFDictionaryGetValue(
+                    dict_ref,
+                    pid_key.as_CFTypeRef() as *const _,
+                );
+
+                if pid_ptr.is_null() {
+                    return None;
+                }
+
+                let pid_num: CFNumber = CFNumber::wrap_under_get_rule(pid_ptr as _);
+                return pid_num.to_i32();
+            }
+        }
+
+        None
+    }
+}
+
+/// Activate an application by its PID
+pub fn activate_app_by_pid(pid: i32) -> bool {
+    use objc::{class, msg_send, sel, sel_impl};
+
+    unsafe {
+        let workspace_class = class!(NSRunningApplication);
+        let running_app: *mut objc::runtime::Object = msg_send![
+            workspace_class,
+            runningApplicationWithProcessIdentifier: pid
+        ];
+
+        if !running_app.is_null() {
+            // NSApplicationActivateIgnoringOtherApps = 1 << 1 = 2
+            let result: bool = msg_send![running_app, activateWithOptions: 2_u64];
+            return result;
+        }
+
+        false
+    }
+}
+
 /// Activate the app that owns the window under cursor
 /// This makes the underlying window receive scroll events
 pub fn activate_window_at_position(x: f64, y: f64) -> bool {

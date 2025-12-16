@@ -12,6 +12,7 @@ interface OverlayRegion {
 
 export default function RecordingOverlay() {
   const [region, setRegion] = useState<OverlayRegion | null>(null);
+  const [isStatic, setIsStatic] = useState(false);
 
   useEffect(() => {
     // Get region from window label query params or listen for it
@@ -20,15 +21,23 @@ export default function RecordingOverlay() {
     const y = parseInt(params.get("y") || "0");
     const w = parseInt(params.get("w") || "200");
     const h = parseInt(params.get("h") || "200");
+    const staticMode = params.get("static") === "1";
     setRegion({ x, y, width: w, height: h });
+    setIsStatic(staticMode);
 
-    // Listen for recording stop to close
-    const unlisten = listen("recording-stopped", async () => {
+    // Listen for recording stop to close (for GIF recording)
+    const unlistenRecording = listen("recording-stopped", async () => {
+      await getCurrentWindow().close();
+    });
+
+    // Listen for scroll capture stop to close (for scroll capture)
+    const unlistenScroll = listen("scroll-capture-stop", async () => {
       await getCurrentWindow().close();
     });
 
     return () => {
-      unlisten.then((fn) => fn());
+      unlistenRecording.then((fn) => fn());
+      unlistenScroll.then((fn) => fn());
     };
   }, []);
 
