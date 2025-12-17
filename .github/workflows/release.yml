@@ -3,12 +3,10 @@ name: Release
 on:
   push:
     branches: [main]
-    tags:
-      - 'v*'
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag to build (e.g., v0.13.5)'
+        description: 'Tag to build (e.g., v0.14.0)'
         required: true
 
 concurrency:
@@ -22,6 +20,9 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+    outputs:
+      should_build: ${{ steps.check.outputs.should_build }}
+      tag_name: ${{ steps.check.outputs.tag_name }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -39,20 +40,29 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Push tag if version changed
-        if: steps.changesets.outputs.hasChangesets == 'false'
+      - name: Check if should build
+        id: check
         run: |
           VERSION=$(node -p "require('./package.json').version")
-          if ! git ls-remote --tags origin | grep -q "refs/tags/v$VERSION$"; then
-            git tag "v$VERSION"
-            git push origin "v$VERSION"
-            echo "Tagged v$VERSION"
+          if [ "${{ steps.changesets.outputs.hasChangesets }}" = "false" ]; then
+            if ! git ls-remote --tags origin | grep -q "refs/tags/v$VERSION$"; then
+              git tag "v$VERSION"
+              git push origin "v$VERSION"
+              echo "should_build=true" >> $GITHUB_OUTPUT
+              echo "tag_name=v$VERSION" >> $GITHUB_OUTPUT
+              echo "Tagged v$VERSION - will trigger build"
+            else
+              echo "should_build=false" >> $GITHUB_OUTPUT
+              echo "Tag v$VERSION already exists"
+            fi
           else
-            echo "Tag v$VERSION already exists"
+            echo "should_build=false" >> $GITHUB_OUTPUT
+            echo "Has changesets, skipping build"
           fi
 
   build:
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    needs: release
+    if: needs.release.outputs.should_build == 'true' || github.event_name == 'workflow_dispatch'
     permissions:
       contents: write
     strategy:
@@ -70,6 +80,8 @@ jobs:
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || needs.release.outputs.tag_name }}
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -96,7 +108,7 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "name=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
           else
-            echo "name=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+            echo "name=${{ needs.release.outputs.tag_name }}" >> $GITHUB_OUTPUT
           fi
 
       - uses: tauri-apps/tauri-action@v0
