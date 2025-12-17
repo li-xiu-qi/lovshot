@@ -26,6 +26,7 @@
     "global-shortcut:allow-unregister",
     "global-shortcut:allow-unregister-all",
     "dialog:default",
-    "clipboard-manager:default"
+    "clipboard-manager:default",
+    "autostart:default"
   ]
 }
