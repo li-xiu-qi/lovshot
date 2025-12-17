@@ -21,7 +21,7 @@ mod types;
 mod windows;
 
 use commands::open_selector_internal;
-use shortcuts::{get_action_for_shortcut, is_stop_recording_shortcut, register_shortcuts_from_config};
+use shortcuts::{get_action_for_shortcut, is_stop_recording_shortcut, register_shortcuts_from_config, unregister_stop_shortcuts};
 use state::{AppState, SharedState};
 use tray::{build_tray_menu, load_tray_icon};
 pub use types::*;
@@ -61,6 +61,8 @@ pub fn run() {
                     if is_recording {
                         println!("[DEBUG][shortcut] 停止录制");
                         state_for_shortcut.lock().unwrap().recording = false;
+                        // Unregister stop shortcuts since recording ended
+                        unregister_stop_shortcuts(app);
                         return;
                     }
 

@@ -5,6 +5,7 @@ use crate::capture::Screen;
 use image::RgbaImage;
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::shortcuts::{register_stop_shortcuts, unregister_stop_shortcuts};
 use crate::state::SharedState;
 use crate::tray::{create_recording_overlay, update_tray_icon};
 use crate::types::{RecordingInfo, RecordingState};
@@ -29,6 +30,9 @@ pub fn start_recording(app: AppHandle, state: tauri::State<SharedState>) -> Resu
 
     let recording_fps = s.recording_fps;
     drop(s);
+
+    // Register stop shortcuts (ESC, etc.) now that we're recording
+    register_stop_shortcuts(&app);
 
     update_tray_icon(&app, true);
     create_recording_overlay(&app, &region, false);
@@ -135,11 +139,15 @@ pub fn start_recording(app: AppHandle, state: tauri::State<SharedState>) -> Resu
 }
 
 #[tauri::command]
-pub fn stop_recording(state: tauri::State<SharedState>) {
+pub fn stop_recording(app: AppHandle, state: tauri::State<SharedState>) {
     println!("[DEBUG][stop_recording] ====== 被调用 ======");
     let mut s = state.lock().unwrap();
     s.recording = false;
     println!("[DEBUG][stop_recording] 录制标志已设置为 false");
+    drop(s);
+
+    // Unregister stop shortcuts since recording ended
+    unregister_stop_shortcuts(&app);
 }
 
 #[tauri::command]

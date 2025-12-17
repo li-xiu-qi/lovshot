@@ -135,6 +135,8 @@ pub fn is_stop_recording_shortcut(shortcut: &Shortcut) -> bool {
 }
 
 /// Register shortcuts from config (called at startup and when config changes)
+/// NOTE: stop_recording shortcuts are NOT registered here - they are dynamically
+/// registered/unregistered when recording starts/stops to avoid hijacking ESC globally
 pub fn register_shortcuts_from_config(app: &AppHandle) -> Result<(), String> {
     let config = config::load_config();
 
@@ -143,6 +145,11 @@ pub fn register_shortcuts_from_config(app: &AppHandle) -> Result<(), String> {
     }
 
     for (action, shortcuts) in &config.shortcuts {
+        // Skip stop_recording - it's dynamically registered only during recording
+        if action == "stop_recording" {
+            continue;
+        }
+
         for shortcut_cfg in shortcuts {
             if !shortcut_cfg.enabled {
                 continue;
@@ -168,4 +175,44 @@ pub fn register_shortcuts_from_config(app: &AppHandle) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+/// Register stop_recording shortcuts (call when recording starts)
+pub fn register_stop_shortcuts(app: &AppHandle) {
+    let config = config::load_config();
+    if let Some(shortcuts) = config.shortcuts.get("stop_recording") {
+        for cfg in shortcuts {
+            if !cfg.enabled {
+                continue;
+            }
+            let shortcut_str = cfg.to_shortcut_string();
+            if let Ok(shortcut) = parse_shortcut(&shortcut_str) {
+                if let Err(e) = app.global_shortcut().register(shortcut) {
+                    eprintln!("[shortcuts] Failed to register stop shortcut ({}): {}", shortcut_str, e);
+                } else {
+                    println!("[shortcuts] Registered stop_recording -> {}", shortcut_str);
+                }
+            }
+        }
+    }
+}
+
+/// Unregister stop_recording shortcuts (call when recording stops)
+pub fn unregister_stop_shortcuts(app: &AppHandle) {
+    let config = config::load_config();
+    if let Some(shortcuts) = config.shortcuts.get("stop_recording") {
+        for cfg in shortcuts {
+            if !cfg.enabled {
+                continue;
+            }
+            let shortcut_str = cfg.to_shortcut_string();
+            if let Ok(shortcut) = parse_shortcut(&shortcut_str) {
+                if let Err(e) = app.global_shortcut().unregister(shortcut) {
+                    eprintln!("[shortcuts] Failed to unregister stop shortcut ({}): {}", shortcut_str, e);
+                } else {
+                    println!("[shortcuts] Unregistered stop_recording -> {}", shortcut_str);
+                }
+            }
+        }
+    }
 }
